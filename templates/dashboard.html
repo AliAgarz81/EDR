@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Mini EDR</title>
+
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #151823;
+      --surface-2: #0f1320;
+      --border: rgba(255,255,255,0.08);
+      --text: #e6e6e6;
+      --muted: #9aa4b2;
+      --accent: #5b6cff;
+      --accent-h: #4757ff;
+      --radius: 12px;
+      --success: #22c55e;
+      --danger: #ef4444;
+      --mono: ui-monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Inter, system-ui;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    /* TOP BAR */
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      justify-content: space-between;
+      padding: 14px 26px;
+      background: rgba(15,17,23,.9);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav h1 {
+      font-size: 15px;
+      margin: 0;
+    }
+
+    /* LAYOUT */
+    .wrapper {
+      display: flex;
+      height: calc(100vh - 56px);
+    }
+
+    /* SIDEBAR */
+    .sidebar {
+      width: 260px;
+      background: var(--surface-2);
+      border-right: 1px solid var(--border);
+      padding: 16px;
+      overflow-y: auto;
+    }
+
+    .agent {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+
+    .agent div {
+      display: flex;
+      align-items: center;
+    }
+
+    /* DYNAMIC DOT STATUS EFFECT */
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 8px;
+      transition: all 0.3s ease;
+    }
+
+    .dot.online {
+      background: var(--success);
+      box-shadow: 0 0 8px var(--success);
+    }
+
+    .dot.offline {
+      background: var(--danger);
+      box-shadow: 0 0 8px var(--danger);
+    }
+
+    .agent small {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .agent small.online {
+      color: var(--success);
+    }
+
+    .agent small.offline {
+      color: var(--danger);
+    }
+
+    /* MAIN */
+    .main {
+      flex: 1;
+      padding: 18px;
+      overflow-y: auto;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+
+    /* FILTER */
+    .filters {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    input, select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px;
+      border-radius: 8px;
+      outline: none;
+    }
+
+    button {
+      background: var(--accent);
+      border: none;
+      color: white;
+      padding: 8px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: var(--accent-h);
+    }
+
+    /* TABLE CONTAINER & TABLE */
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+      margin-bottom: 15px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      table-layout: auto;
+    }
+
+    th {
+      text-align: left;
+      padding: 12px 10px;
+      background: rgba(255,255,255,0.03);
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      padding: 12px 10px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    /* Sütunların qırılmasının qarşısını almaq üçün xüsusi genişlik tənzimləmələri */
+    .col-time {
+      white-space: nowrap;
+      width: 180px;
+    }
+
+    .col-host {
+      white-space: nowrap; /* "Client" sözünün qırılmasını tamamilə əngəlləyir */
+      min-width: 100px;
+    }
+
+    .col-category {
+      white-space: nowrap;
+      width: 90px;
+    }
+
+    .col-log {
+      word-break: break-all; /* Çox uzun bitişik bitlər varsa strukturu pozmasın */
+      word-wrap: break-word;
+    }
+
+    tr:hover {
+      background: rgba(91,108,255,0.06);
+    }
+
+    .tag {
+      padding: 3px 8px;
+      border-radius: 99px;
+      font-size: 11px;
+      background: rgba(91,108,255,0.15);
+      color: var(--accent);
+    }
+
+    /* PAGINATION SCROLL LENTI */
+    .pagination {
+      display: flex;
+      gap: 6px;
+      margin-top: 20px;
+      justify-content: flex-start;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      padding: 10px 5px;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+
+    .pagination::-webkit-scrollbar {
+      display: none;
+    }
+
+    .pagination a {
+      padding: 8px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      text-decoration: none;
+      font-size: 13px;
+      background: var(--surface-2);
+      flex-shrink: 0;
+      transition: all 0.2s ease;
+    }
+
+    .pagination a:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--muted);
+    }
+
+    .pagination a.active {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+      font-weight: bold;
+    }
+
+    /* HEADER CARD */
+    .title {
+      margin-bottom: 12px;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 12px;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="nav">
+  <h1>🛡 Mini EDR Dashboard</h1>
+</div>
+
+<div class="wrapper">
+
+  <div class="sidebar">
+    <h3>Agents</h3>
+
+    {% for a in agents %}
+    <div class="agent">
+      <div>
+        <span class="dot {{ a.status }}"></span>
+        {{ a.hostname }}
+      </div>
+      <small class="{{ a.status }}">{{ a.status }}</small>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="main">
+
+    <div class="card">
+
+      <div class="title">Logs</div>
+      <div class="hint">Filtered security telemetry stream</div>
+
+      <form method="get" class="filters">
+        <input name="hostname" placeholder="hostname" value="{{ hostname }}">
+        <select name="category">
+          <option value="">All</option>
+          <option value="process" {% if category == 'process' %}selected{% endif %}>process</option>
+          <option value="network" {% if category == 'network' %}selected{% endif %}>network</option>
+        </select>
+        <button type="submit">Filter</button>
+      </form>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th class="col-time">Time</th>
+              <th class="col-host">Host</th>
+              <th class="col-category">Category</th>
+              <th class="col-log">Log</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for log in logs %}
+            <tr>
+              <td class="col-time" style="color: var(--muted); font-family: monospace;">
+                {{ log.timestamp }}
+              </td>
+              <td class="col-host">{{ log.hostname }}</td>
+              <td class="col-category"><span class="tag">{{ log.category }}</span></td>
+              <td class="col-log">{{ log.content }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="4" style="text-align: center; color: var(--muted); padding: 24px;">
+                Heç bir loq tapılmadı.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if total_pages > 1 %}
+      <div class="pagination">
+        {% for i in range(1, total_pages + 1) %}
+          <a href="/?page={{ i }}{% if category %}&category={{ category }}{% endif %}{% if hostname %}&hostname={{ hostname }}{% endif %}"
+             class="{% if i == page %}active{% endif %}">
+            {{ i }}
+          </a>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+    </div>
+
+  </div>
+
+</div>
+
+</body>
+</html>
