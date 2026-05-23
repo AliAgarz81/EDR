@@ -7,15 +7,25 @@ import platform
 import json
 from datetime import datetime
 
-SERVER = "http://192.168.0.197:8000"
+SERVER = "http://20.10.0.84:8000"
 AGENT_KEY = "edr-secret-key-2024"
 
 hostname = socket.gethostname()
-ip = socket.gethostbyname(hostname)
 
+def get_ip():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip_addr = s.getsockname()[0]
+        s.close()
+        return ip_addr
+    except Exception:
+        return socket.gethostbyname(hostname)
+
+ip = get_ip()
 HEADERS = {"X-Agent-Key": AGENT_KEY}
 
-# --- Şübhəli proses adları ---
+# --- Şübhəli Proseslər ---
 SUSPICIOUS_PROCS = {
     'powershell.exe', 'cmd.exe', 'wscript.exe', 'cscript.exe',
     'mshta.exe', 'rundll32.exe', 'regsvr32.exe', 'certutil.exe',
@@ -24,7 +34,7 @@ SUSPICIOUS_PROCS = {
     'at.exe', 'schtasks.exe', 'msiexec.exe',
 }
 
-# --- Şübhəli komanda argumentləri ---
+# --- Şübhəli Argumentlər ---
 SUSPICIOUS_ARGS = [
     '-enc', '-encodedcommand', 'bypass', '-nop', '-noprofile',
     'invoke-expression', 'iex(', 'downloadstring', 'webclient',
@@ -32,24 +42,13 @@ SUSPICIOUS_ARGS = [
     '-windowstyle hidden', '/c powershell', 'hidden',
 ]
 
-# --- Şübhəli portlar ---
+# --- Şübhəli Portlar ---
 SUSPICIOUS_PORTS = {4444, 4445, 1337, 31337, 8888, 9999, 6666, 2222, 5555, 7777}
 
-# --- Flood zamanı sayılmaması üçün sistem prosesləri ---
-NOISE_PROCS = {
-    'svchost.exe', 'conhost.exe', 'dllhost.exe', 'backgroundtaskhost.exe',
-    'taskhostw.exe', 'runtimebroker.exe', 'searchindexer.exe',
-    'wuauclt.exe', 'system', 'registry', 'smss.exe', 'csrss.exe',
-    'winlogon.exe', 'lsass.exe', 'spoolsv.exe', 'audiodg.exe',
-}
-
-# --- State tracking ---
 prev_pids = set()
 prev_connections = set()
 
-
 def get_system_info():
-    """CPU, RAM, Disk, User, Uptime məlumatlarını toplayır."""
     try:
         boot_ts = psutil.boot_time()
         uptime_sec = int(time.time() - boot_ts)
@@ -60,10 +59,7 @@ def get_system_info():
 
         users = psutil.users()
         active_user = users[0].name.split("\\")[-1] if users else "Unknown"
-        login_time = (
-            datetime.fromtimestamp(users[0].started).strftime("%Y-%m-%d %H:%M:%S")
-            if users else "Unknown"
-        )
+        login_time = datetime.fromtimestamp(users[0].started).strftime("%Y-%m-%d %H:%M:%S") if users else "Unknown"
 
         vm = psutil.virtual_memory()
         disk = psutil.disk_usage("/")
@@ -87,13 +83,9 @@ def get_system_info():
         print(f"[WARN] get_system_info: {e}")
         return {}
 
-
 def get_top_processes():
-    """CPU-ya görə üst 50 prosesi qaytarır."""
     procs = []
-    for proc in psutil.process_iter(
-        ['pid', 'name', 'cpu_percent', 'memory_percent', 'status', 'username']
-    ):
+    for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent', 'status', 'username']):
         try:
             i = proc.info
             procs.append({
@@ -109,17 +101,15 @@ def get_top_processes():
     procs.sort(key=lambda x: (x['cpu'], x['memory']), reverse=True)
     return procs[:50]
 
-
 def collect_smart_logs():
-    """Yalnız mənalı, strukturlu log-ları toplayır."""
     global prev_pids, prev_connections
     logs = []
 
     # ============================================================
-    # 1. PROSES MONİTORİNQİ — yalnız yeni/şübhəli proseslər
+    # 1. BÜTÜN PROSESLƏRİN MONİTORİNQİ (HƏM ADİ, HƏM ŞÜBHƏLİ)
     # ============================================================
     current_procs = {}
-    for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'username']):
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'username', 'status', 'exe']):
         try:
             current_procs[proc.pid] = proc.info
         except Exception:
@@ -130,48 +120,59 @@ def collect_smart_logs():
 
     for pid in new_pids:
         info = current_procs.get(pid, {})
-        raw_name = (info.get('name') or 'unknown')
+        raw_name = info.get('name') or 'unknown'
         name_lower = raw_name.lower()
-
         cmdline_list = info.get('cmdline') or []
-        cmdline = ' '.join(cmdline_list).lower()
+        cmdline = ' '.join(cmdline_list)
+        username = (info.get('username') or '').split('\\')[-1]
 
+        # Şübhə məntiqi (Aşkarlama hələ də işləyir)
         is_sus_name = name_lower in SUSPICIOUS_PROCS
-        has_sus_arg = any(arg in cmdline for arg in SUSPICIOUS_ARGS)
+        has_sus_arg = any(arg in cmdline.lower() for arg in SUSPICIOUS_ARGS)
 
-        if is_sus_name or has_sus_arg:
-            severity = "critical" if has_sus_arg else "warning"
-            cmd_preview = ' '.join(cmdline_list)[:300] if cmdline_list else ""
-            msg = f"Suspicious process started: {raw_name} (PID:{pid})"
-            if cmd_preview:
-                msg += f" | CMD: {cmd_preview}"
-            logs.append({"category": "process", "severity": severity, "content": msg})
-        elif prev_pids and name_lower not in NOISE_PROCS:
-            # Yeni adi proses — yalnız ilk dəfə işlədildikdə qeyd et
-            logs.append({
-                "category": "process",
-                "severity": "info",
-                "content": f"New process started: {raw_name} (PID:{pid})",
-            })
+        # Defolt olaraq hər bir yeni proses info səviyyəsində göndərilir
+        severity = "info"
+        is_suspicious = "false"
 
+        if has_sus_arg:
+            severity = "critical"
+            is_suspicious = "true"
+        elif is_sus_name:
+            severity = "warning"
+            is_suspicious = "true"
+
+        raw_log = f"PROCESS_START: PID={pid} | Name={raw_name} | User={username} | Status={info.get('status')} | Exe={info.get('exe')} | Cmd={cmdline}"
+        
+        logs.append({
+            "category": "process",
+            "severity": severity,
+            "content": raw_log,
+            "fields": {
+                "pid": pid,
+                "process_name": raw_name,
+                "username": username,
+                "exe_path": info.get('exe') or "",
+                "command_line": cmdline,
+                "is_suspicious": is_suspicious
+            }
+        })
     prev_pids = current_pids
 
     # ============================================================
-    # 2. ŞƏBƏKƏ MONİTORİNQİ — DDoS aşkarlanması, şübhəli portlar
+    # 2. BÜTÜN ŞƏBƏKƏ QOŞULMALARI (HƏM ADİ, HƏM ŞÜBHƏLİ)
     # ============================================================
     current_conns = {}
     ip_counts = {}
-
     try:
         for conn in psutil.net_connections(kind='inet'):
             if not conn.raddr:
                 continue
-            rip   = conn.raddr.ip
-            rport = conn.raddr.port
-            proto  = "TCP" if getattr(conn, 'type', 1) == 1 else "UDP"
-            status = getattr(conn, 'status', '')
+            rip, rport = conn.raddr.ip, conn.raddr.port
+            lip, lport = conn.laddr.ip, conn.laddr.port
+            proto = "TCP" if getattr(conn, 'type', 1) == 1 else "UDP"
+            status = getattr(conn, 'status', 'NONE')
 
-            key = (rip, rport, proto, status)
+            key = (rip, rport, lip, lport, proto, status, conn.pid)
             current_conns[key] = current_conns.get(key, 0) + 1
             ip_counts[rip] = ip_counts.get(rip, 0) + 1
     except Exception as e:
@@ -179,172 +180,156 @@ def collect_smart_logs():
 
     LOCAL_PREFIXES = ('127.', '::1', '0.', '169.254.')
 
-    # DDoS / Flood aşkarlanması
+    # DDoS/Flood aşkarlama xəbərdarlığı (Həddi aşanda kritik loq əlavə edir)
     for rip, count in ip_counts.items():
-        if any(rip.startswith(p) for p in LOCAL_PREFIXES):
-            continue
-        if count >= 20:
+        if any(rip.startswith(p) for p in LOCAL_PREFIXES): continue
+        if count >= 10:
+            sev = "critical" if count >= 20 else "warning"
             logs.append({
-                "category": "network", "severity": "critical",
-                "content": f"POSSIBLE DDoS/FLOOD: {count} simultaneous connections → {rip}",
-            })
-        elif count >= 10:
-            logs.append({
-                "category": "network", "severity": "warning",
-                "content": f"High connection count: {count} connections → {rip}",
+                "category": "network", "severity": sev,
+                "content": f"NETWORK_FLOOD: Connection count alert from Remote IP {rip} | Total Connections: {count}",
+                "fields": {"remote_ip": rip, "connection_count": count, "alert_type": "DDoS/Flood_Suspect", "is_suspicious": "true"}
             })
 
-    # Yeni xarici bağlantılar
+    # Hər bir yeni şəbəkə bağlantısını SIEM-ə ötürürük
     new_conns = set(current_conns.keys()) - prev_connections
-    for (rip, rport, proto, status) in new_conns:
-        if any(rip.startswith(p) for p in LOCAL_PREFIXES):
-            continue
-        is_sus = rport in SUSPICIOUS_PORTS
-        sev = "warning" if is_sus else "info"
-        content = f"New {proto} connection: → {rip}:{rport} [{status}]"
-        if is_sus:
-            content += "  ⚠️ SUSPICIOUS PORT!"
-        logs.append({"category": "network", "severity": sev, "content": content})
+    for (rip, rport, lip, lport, proto, status, c_pid) in new_conns:
+        if any(rip.startswith(p) for p in LOCAL_PREFIXES): continue
+        
+        is_sus_port = rport in SUSPICIOUS_PORTS
+        severity = "warning" if is_sus_port else "info"
+        is_suspicious = "true" if is_sus_port else "false"
+        
+        p_name = "Unknown"
+        if c_pid:
+            try: p_name = psutil.Process(c_pid).name()
+            except: pass
 
+        raw_log = f"NET_CONN: Proto={proto} | Local={lip}:{lport} | Remote={rip}:{rport} | Status={status} | PID={c_pid} ({p_name})"
+        
+        logs.append({
+            "category": "network", "severity": severity,
+            "content": raw_log,
+            "fields": {
+                "protocol": proto, "remote_ip": rip, "remote_port": rport,
+                "local_ip": lip, "local_port": lport, "status": status,
+                "pid": c_pid, "process_name": p_name, "is_suspicious": is_suspicious
+            }
+        })
     prev_connections = set(current_conns.keys())
 
     # ============================================================
-    # 3. WINDOWS EVENT LOG — login/logout, PowerShell, servis
+    # 3. WINDOWS AUDIT VƏ EVENT LOGS (GENİŞLƏNDİRİLMİŞ EVENT ID-LƏR)
     # ============================================================
-    _collect_security_events(logs)
-    _collect_system_events(logs)
+    _collect_windows_events(logs)
 
     return logs
 
-
-def _run_wevtutil(log_name, query, max_events=20, timeout=8):
-    """wevtutil ilə Windows Event Log-dan hadisələri oxuyur."""
+def _run_wevtutil(log_name, query, max_events=15):
     try:
         result = subprocess.run(
-            ['wevtutil', 'qe', log_name, f'/q:{query}',
-             '/f:text', f'/c:{max_events}', '/rd:true'],
-            capture_output=True, text=True, timeout=timeout
+            ['wevtutil', 'qe', log_name, f'/q:{query}', '/f:text', f'/c:{max_events}', '/rd:true'],
+            capture_output=True, text=True, timeout=5
         )
         return result.stdout
-    except Exception:
+    except:
         return ""
 
+def _collect_windows_events(logs):
+    # Security: Uğurlu (4624), Uğursuz (4625) girişlər və Log-out (4634) hadisələri
+    q_sec = '*[System[(EventID=4624 or EventID=4625 or EventID=4634) and TimeCreated[timediff(@SystemTime) <= 120000]]]'
+    sec_text = _run_wevtutil('Security', q_sec, max_events=25)
+    if sec_text:
+        _parse_and_add_wevt(sec_text, "security", logs)
 
-def _collect_security_events(logs):
-    """Uğurlu/uğursuz login, logout hadisələrini toplayır."""
-    query = ('*[System[(EventID=4624 or EventID=4625 or EventID=4634) '
-             'and TimeCreated[timediff(@SystemTime) <= 120000]]]')
-    text = _run_wevtutil('Security', query, max_events=30)
-    if not text:
-        return
+    # System: Yeni Servis Quraşdırılması (7045 - Persistence üçün kritikdir)
+    q_sys = '*[System[EventID=7045 and TimeCreated[timediff(@SystemTime) <= 120000]]]'
+    sys_text = _run_wevtutil('System', q_sys, max_events=10)
+    if sys_text:
+        _parse_and_add_wevt(sys_text, "system", logs)
 
-    current_id = None
-    accounts = []
-    SKIP_ACCOUNTS = {'SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE', '-', '', 'ANONYMOUS LOGON'}
+    # PowerShell: ScriptBlock icraları (4104 - Kod analizi üçün)
+    q_ps = '*[System[EventID=4104 and TimeCreated[timediff(@SystemTime) <= 120000]]]'
+    ps_text = _run_wevtutil('Microsoft-Windows-PowerShell/Operational', q_ps, max_events=10)
+    if ps_text:
+        _parse_and_add_wevt(ps_text, "security", logs)
 
-    for line in text.split('\n'):
-        line = line.strip()
-        if line.startswith('Event ID:'):
-            if current_id and accounts:
-                _emit_login_event(current_id, accounts[-1], logs)
-            current_id = line.split(':')[-1].strip()
-            accounts = []
-        elif 'Account Name:' in line:
-            val = line.split('Account Name:')[-1].strip()
-            if val and val not in SKIP_ACCOUNTS:
-                accounts.append(val)
+def _parse_and_add_wevt(text, cat, logs):
+    events = text.split("\n\n")
+    for ev in events:
+        if not ev.strip(): continue
+        lines = ev.split("\n")
+        
+        eid = "Unknown"
+        source = "Unknown"
+        raw_accumulated = []
+        fields = {}
 
-    if current_id and accounts:
-        _emit_login_event(current_id, accounts[-1], logs)
+        for l in lines:
+            l_strip = l.strip()
+            if not l_strip: continue
+            raw_accumulated.append(l_strip)
+            
+            if l_strip.startswith("Event ID:"): eid = l_strip.split(":")[-1].strip()
+            elif l_strip.startswith("Source:"): source = l_strip.split(":")[-1].strip()
+            elif ":" in l_strip:
+                k, v = l_strip.split(":", 1)
+                k_clean = k.strip().lower().replace(" ", "_")
+                v_clean = v.strip()
+                if v_clean and len(k_clean) < 30:
+                    fields[k_clean] = v_clean
 
+        if eid != "Unknown":
+            # Şübhə səviyyəsini təyin edirik
+            severity = "info"
+            is_suspicious = "false"
+            
+            if eid in ("4625", "4104"):
+                severity = "warning"
+                is_suspicious = "true"
+            elif eid == "7045":
+                severity = "critical"
+                is_suspicious = "true"
 
-def _emit_login_event(event_id, user, logs):
-    if event_id == '4624':
-        logs.append({"category": "security", "severity": "info",
-                     "content": f"✅ Successful login: {user}"})
-    elif event_id == '4625':
-        logs.append({"category": "security", "severity": "warning",
-                     "content": f"❌ Failed login attempt: {user}"})
-    elif event_id == '4634':
-        logs.append({"category": "security", "severity": "info",
-                     "content": f"🚪 User logged out: {user}"})
+            logs.append({
+                "category": cat,
+                "severity": severity,
+                "content": " || ".join(raw_accumulated[:15]), # İlk 15 mühüm sətir raw data kimi
+                "fields": {
+                    "event_id": eid,
+                    "source": source,
+                    "is_suspicious": is_suspicious,
+                    **fields
+                }
+            })
 
-
-def _collect_system_events(logs):
-    """Yeni servis quraşdırılması, PowerShell ScriptBlock."""
-    # Yeni servis (malware persistence)
-    q7045 = '*[System[EventID=7045 and TimeCreated[timediff(@SystemTime) <= 120000]]]'
-    if _run_wevtutil('System', q7045, max_events=5):
-        logs.append({
-            "category": "system", "severity": "warning",
-            "content": "⚠️ New Windows service installed (Event 7045) — possible persistence!",
-        })
-
-    # PowerShell ScriptBlock (obfuscated code aşkarlanması)
-    q4104 = '*[System[EventID=4104 and TimeCreated[timediff(@SystemTime) <= 120000]]]'
-    ps_out = _run_wevtutil('Microsoft-Windows-PowerShell/Operational', q4104, max_events=5)
-    if ps_out and 'ScriptBlock' in ps_out:
-        logs.append({
-            "category": "security", "severity": "warning",
-            "content": "⚠️ PowerShell ScriptBlock execution detected (Event 4104)",
-        })
-
-
-# ================================================================
-# GÖNDƏRMƏ FUNKSİYALARI
-# ================================================================
 def send_heartbeat(system_info):
-    data = {"hostname": hostname, "ip": ip, "system_info": system_info}
-    requests.post(f"{SERVER}/heartbeat", json=data, headers=HEADERS, timeout=10)
-
+    try: requests.post(f"{SERVER}/heartbeat", json={"hostname": hostname, "ip": ip, "system_info": system_info}, headers=HEADERS, timeout=5)
+    except: pass
 
 def send_logs(logs):
-    if not logs:
-        return
-    requests.post(f"{SERVER}/logs",
-                  json={"hostname": hostname, "logs": logs},
-                  headers=HEADERS, timeout=10)
-
+    if not logs: return
+    try: requests.post(f"{SERVER}/logs", json={"hostname": hostname, "logs": logs}, headers=HEADERS, timeout=5)
+    except: pass
 
 def send_processes(processes):
-    requests.post(f"{SERVER}/processes",
-                  json={"hostname": hostname, "processes": processes},
-                  headers=HEADERS, timeout=10)
+    try: requests.post(f"{SERVER}/processes", json={"hostname": hostname, "processes": processes}, headers=HEADERS, timeout=5)
+    except: pass
 
-
-# ================================================================
-# BAŞLANĞIC
-# ================================================================
-print(f"[EDR Agent] Starting → {hostname} ({ip})")
-print(f"[EDR Agent] Server   → {SERVER}")
-
-# İlk dəfə mövcud PID-ləri qeyd edirik ki, flood olmasm
-for _p in psutil.process_iter(['pid']):
-    try:
-        prev_pids.add(_p.pid)
-    except Exception:
-        pass
-print(f"[EDR Agent] Tracking {len(prev_pids)} existing processes")
-
-# ================================================================
-# ANA DÖVR
-# ================================================================
-while True:
-    try:
-        sinfo = get_system_info()
-        send_heartbeat(sinfo)
-
-        logs  = collect_smart_logs()
-        send_logs(logs)
-
-        procs = get_top_processes()
-        send_processes(procs)
-
-        ts = datetime.now().strftime('%H:%M:%S')
-        print(f"[{ts}] Logs: {len(logs)} | CPU: {sinfo.get('cpu_percent', '?')}% "
-              f"| RAM: {sinfo.get('ram_percent', '?')}%")
-
-    except Exception as e:
-        print(f"[ERROR] {e}")
-
-    time.sleep(30)
+if __name__ == "__main__":
+    print(f"[NexGuard Agent] Continuous Telemetry Logging Mode Active. Host: {hostname}")
+    for _p in psutil.process_iter(['pid']):
+        try: prev_pids.add(_p.pid)
+        except: pass
+        
+    while True:
+        try:
+            sinfo = get_system_info()
+            send_heartbeat(sinfo)
+            logs = collect_smart_logs()
+            send_logs(logs)
+            send_processes(get_top_processes())
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Shipped {len(logs)} logs to SIEM database.")
+        except Exception as e:
+            print(f"[ERR] Main Loop: {e}")
+        time.sleep(30)
