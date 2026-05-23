@@ -3,3 +3,8 @@ uvicorn
 jinja2
 sqlalchemy
 python-multipart
+psutil
+requests
+python-pam
+pyjwt
+six

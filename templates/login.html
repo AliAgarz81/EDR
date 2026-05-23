@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+  <meta charset="UTF-8">
+  <title>NexGuard SIEM — Login</title>
+  <style>
+    :root {
+      --bg: #0b0e17;
+      --surface: #111520;
+      --border: rgba(255, 255, 255, 0.07);
+      --text: #e2e8f0;
+      --muted: #8896aa;
+      --accent: #5b6cff;
+      --danger: #ef4444;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, system-ui, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+    .login-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 32px;
+      border-radius: 12px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+    }
+    .brand {
+      font-size: 20px;
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 24px;
+      color: #fff;
+      letter-spacing: 0.5px;
+    }
+    .brand span { color: var(--accent); }
+    .form-group { margin-bottom: 18px; }
+    .form-group label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .form-group input {
+      width: 100%;
+      background: #0d1019;
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .form-group input:focus { border-color: var(--accent); }
+    .btn-login {
+      width: 100%;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 10px;
+      transition: opacity 0.15s;
+    }
+    .btn-login:hover { opacity: 0.9; }
+    .error-msg {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      color: var(--danger);
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      margin-bottom: 16px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+<div class="login-card">
+  <div class="brand">NexGuard <span>SIEM</span></div>
+  
+  {% if error %}
+    <div class="error-msg">{{ error }}</div>
+  {% endif %}
+
+  <form action="/login" method="post">
+    <div class="form-group">
+      <label for="username">Linux User (Ubuntu)</label>
+      <input type="text" id="username" name="username" required autocomplete="off" placeholder="e.g. ali">
+    </div>
+    <div class="form-group">
+      <label for="password">Şifrə</label>
+      <input type="password" id="password" name="password" required>
+    </div>
+    <button type="submit" class="btn-login">Sistemə Daxil Ol</button>
+  </form>
+</div>
+
+</body>
+</html>

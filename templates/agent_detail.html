@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+  <meta charset="UTF-8"/>
+  <title>{{ agent.hostname }} — Agent Detail</title>
+  <style>
+    :root {
+      --bg:       #0b0e17;
+      --surface:  #111520;
+      --surface2: #0d1019;
+      --surface3: #161b28;
+      --border:   rgba(255,255,255,0.07);
+      --text:     #e2e8f0;
+      --muted:    #8896aa;
+      --accent:   #5b6cff;
+      --radius:   10px;
+      --ok:       #22c55e;
+      --warn:     #f59e0b;
+      --danger:   #ef4444;
+      --info-clr: #38bdf8;
+      --mono:     'JetBrains Mono', 'Fira Mono', ui-monospace, monospace;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: Inter, system-ui; font-size: 14px; }
+
+    /* NAV */
+    .nav {
+      position: sticky; top: 0; z-index: 100;
+      display: flex; align-items: center; gap: 14px;
+      padding: 12px 22px;
+      background: rgba(11,14,23,.92); backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+    .back-btn {
+      display: flex; align-items: center; gap: 6px;
+      text-decoration: none; color: var(--muted); font-size: 13px;
+      padding: 4px 10px; border-radius: 7px; border: 1px solid var(--border);
+      transition: .15s;
+    }
+    .back-btn:hover { color: var(--text); border-color: var(--muted); }
+    .nav-title { font-size: 15px; font-weight: 600; }
+    .status-badge {
+      font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px;
+      text-transform: uppercase; letter-spacing: .05em;
+    }
+    .badge-online  { background: #22c55e1a; color: var(--ok);    border: 1px solid #22c55e44; }
+    .badge-offline { background: #ef44441a; color: var(--danger); border: 1px solid #ef444444; }
+
+    /* LAYOUT */
+    .page { max-width: 1300px; margin: 0 auto; padding: 20px 16px; }
+
+    /* GRID */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 14px; }
+    @media (max-width: 900px) {
+      .grid-4 { grid-template-columns: 1fr 1fr; }
+      .grid-3 { grid-template-columns: 1fr 1fr; }
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 550px) {
+      .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    /* CARD */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .card-header { padding: 12px 16px; border-bottom: 1px solid var(--border);
+                   display: flex; align-items: center; justify-content: space-between; }
+    .card-title  { font-size: 13px; font-weight: 600; }
+    .card-body   { padding: 16px; }
+    .section-label { font-size: 10px; font-weight: 600; text-transform: uppercase;
+                     letter-spacing: .1em; color: var(--muted); margin-bottom: 14px; }
+
+    /* RESOURCE GAUGE */
+    .gauge-card { padding: 16px; text-align: center; }
+    .gauge-title { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase;
+                   letter-spacing: .08em; margin-bottom: 10px; }
+    .gauge-value { font-size: 32px; font-weight: 700; line-height: 1; margin-bottom: 6px; }
+    .gauge-sub   { font-size: 11px; color: var(--muted); margin-bottom: 10px; }
+    .gauge-bar   { height: 5px; background: rgba(255,255,255,0.08); border-radius: 99px; overflow: hidden; }
+    .gauge-fill  { height: 100%; border-radius: 99px; transition: width .6s ease; }
+    .fill-ok     { background: var(--ok); }
+    .fill-warn   { background: var(--warn); }
+    .fill-danger { background: var(--danger); }
+
+    /* INFO GRID */
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+    .info-row  { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .info-row:last-child { border-bottom: none; }
+    .info-label { font-size: 11px; color: var(--muted); width: 110px; flex-shrink: 0; padding-top: 1px; }
+    .info-val   { font-size: 13px; color: var(--text); font-weight: 500; word-break: break-word; }
+    .info-mono  { font-family: var(--mono); font-size: 12px; }
+
+    /* FILTER */
+    .filter-form { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+    .filter-form select {
+      background: var(--bg); border: 1px solid var(--border); color: var(--text);
+      padding: 6px 10px; border-radius: 8px; font-size: 13px; outline: none;
+    }
+    .filter-form select:focus { border-color: var(--accent); }
+    .btn { background: var(--accent); border: none; color: #fff; padding: 6px 14px;
+           border-radius: 8px; cursor: pointer; font-size: 13px; }
+    .btn:hover { opacity: .85; }
+    .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--muted);
+                 padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 13px;
+                 text-decoration: none; }
+    .btn-ghost:hover { border-color: var(--muted); color: var(--text); }
+
+    /* TABLE */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { padding: 9px 12px; text-align: left; color: var(--muted);
+         background: rgba(255,255,255,0.02); border-bottom: 1px solid var(--border);
+         font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+    td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; font-size: 12px; }
+    
+    /* INTERACTIVE ROW STYLES */
+    .log-row { cursor: pointer; transition: background 0.15s; }
+    .log-row:hover td { background: rgba(91,108,255,0.06) !important; }
+    
+    .col-time { white-space: nowrap; font-family: var(--mono); font-size: 11px; color: var(--muted); width: 155px; }
+    .col-cat  { white-space: nowrap; width: 100px; }
+    .col-sev  { white-space: nowrap; width: 100px; }
+    .col-msg  { word-break: break-word; }
+
+    /* TELEMETRY EXPANSION PANEL STYLES */
+    .detail-row { display: none; background: #080a11; }
+    .telemetry-container { padding: 16px; display: flex; gap: 20px; border-bottom: 1px solid var(--border); }
+    .telemetry-raw { flex: 3; border-right: 1px solid rgba(255,255,255,0.04); padding-right: 16px; }
+    .telemetry-parsed { flex: 2; }
+    .telemetry-section-title { font-size: 11px; color: var(--muted); font-weight: 600; margin-bottom: 8px; text-transform: uppercase; letter-spacing: .05em; }
+    
+    .raw-text { 
+      background: var(--surface2); padding: 12px; border-radius: 6px; 
+      border: 1px solid var(--border); font-family: var(--mono); font-size: 12px; 
+      line-height: 1.5; color: #e2e8f0; white-space: pre-wrap; word-break: break-all; 
+    }
+    
+    .fields-table { width: 100%; font-family: var(--mono); font-size: 12px; }
+    .fields-table tr:hover td { background: transparent; }
+    .fields-table td { padding: 5px 8px; border-bottom: 1px solid rgba(255,255,255,0.02); }
+    .f-key { color: var(--muted); font-weight: 600; width: 35%; }
+    .f-val { color: var(--info-clr); word-break: break-all; }
+
+    /* BADGES */
+    .tag  { display: inline-block; padding: 2px 7px; border-radius: 5px; font-size: 11px; font-weight: 500; }
+    .tag-process  { background: #5b6cff18; color: #7a8aff; }
+    .tag-network  { background: #38bdf818; color: #38bdf8; }
+    .tag-security { background: #f59e0b18; color: #f59e0b; }
+    .tag-system   { background: #8b5cf618; color: #a78bfa; }
+    
+    .sev-info     { background: #38bdf818; color: #38bdf8; }
+    .sev-warning  { background: #f59e0b18; color: #f59e0b; }
+    .sev-critical { background: #ef444420; color: #ef4444; }
+    
+    .row-critical td { background: rgba(239,68,68,0.04); }
+    .row-warning  td { background: rgba(245,158,11,0.03); }
+
+    /* CPU bar in process table */
+    .cpu-bar { display: flex; align-items: center; gap: 6px; min-width: 80px; }
+    .cpu-track { flex: 1; height: 4px; background: rgba(255,255,255,0.08); border-radius: 99px; overflow: hidden; }
+    .cpu-fill  { height: 100%; border-radius: 99px; background: var(--accent); }
+    .cpu-label { font-size: 11px; color: var(--muted); width: 36px; text-align: right; flex-shrink: 0; }
+
+    /* SUMMARY PILLS */
+    .summary-row { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+    .spill { padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 500;
+             border: 1px solid var(--border); background: var(--surface); }
+    .spill-ok   { border-color: #22c55e44; color: var(--ok); }
+    .spill-warn { border-color: #f59e0b44; color: var(--warn); }
+    .spill-err  { border-color: #ef444444; color: var(--danger); }
+
+    .empty { padding: 30px; text-align: center; color: var(--muted); }
+    .mb14 { margin-bottom: 14px; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <a class="back-btn" href="/">← Dashboard</a>
+  <div class="nav-title">{{ agent.hostname }}</div>
+  <span class="status-badge badge-{{ agent.status }}">{{ agent.status }}</span>
+  <span style="color:var(--muted);font-size:12px;margin-left:auto">{{ agent.ip }}</span>
+</nav>
+
+<div class="page">
+
+  <div class="section-label">Resurs İstifadəsi</div>
+  <div class="grid-3 mb14">
+
+    {% set cpu = agent.cpu_percent or 0 %}
+    {% set cpu_cls = 'fill-ok' if cpu < 60 else ('fill-warn' if cpu < 85 else 'fill-danger') %}
+    <div class="card">
+      <div class="gauge-card">
+        <div class="gauge-title">CPU</div>
+        <div class="gauge-value" style="color:{% if cpu < 60 %}var(--ok){% elif cpu < 85 %}var(--warn){% else %}var(--danger){% endif %}">
+          {{ cpu | int }}%
+        </div>
+        <div class="gauge-sub">İşlənmə</div>
+        <div class="gauge-bar"><div class="gauge-fill {{ cpu_cls }}" style="width:{{ cpu }}%"></div></div>
+      </div>
+    </div>
+
+    {% set ram = agent.ram_percent or 0 %}
+    {% set ram_cls = 'fill-ok' if ram < 70 else ('fill-warn' if ram < 90 else 'fill-danger') %}
+    <div class="card">
+      <div class="gauge-card">
+        <div class="gauge-title">RAM</div>
+        <div class="gauge-value" style="color:{% if ram < 70 %}var(--ok){% elif ram < 90 %}var(--warn){% else %}var(--danger){% endif %}">
+          {{ ram | int }}%
+        </div>
+        <div class="gauge-sub">{{ agent.ram_used_gb }} GB / {{ agent.ram_total_gb }} GB</div>
+        <div class="gauge-bar"><div class="gauge-fill {{ ram_cls }}" style="width:{{ ram }}%"></div></div>
+      </div>
+    </div>
+
+    {% set disk = agent.disk_percent or 0 %}
+    {% set disk_cls = 'fill-ok' if disk < 75 else ('fill-warn' if disk < 90 else 'fill-danger') %}
+    <div class="card">
+      <div class="gauge-card">
+        <div class="gauge-title">Disk</div>
+        <div class="gauge-value" style="color:{% if disk < 75 %}var(--ok){% elif disk < 90 %}var(--warn){% else %}var(--danger){% endif %}">
+          {{ disk | int }}%
+        </div>
+        <div class="gauge-sub">{{ agent.disk_used_gb }} GB / {{ agent.disk_total_gb }} GB</div>
+        <div class="gauge-bar"><div class="gauge-fill {{ disk_cls }}" style="width:{{ disk }}%"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label">Sistem Məlumatları</div>
+  <div class="card mb14">
+    <div class="card-body" style="padding:0">
+      <div class="info-grid">
+        <div>
+          <div class="info-row" style="padding:10px 16px">
+            <div class="info-label">Aktiv User</div>
+            <div class="info-val">👤 {{ agent.active_user or "—" }}</div>
+          </div>
+          <div class="info-row" style="padding:10px 16px">
+            <div class="info-label">Login Tarixi</div>
+            <div class="info-val info-mono">{{ agent.login_time or "—" }}</div>
+          </div>
+          <div class="info-row" style="padding:10px 16px">
+            <div class="info-label">Uptime</div>
+            <div class="info-val">⏱ {{ agent.uptime or "—" }}</div>
+          </div>
+          <div class="info-row" style="padding:10px 16px">
+            <div class="info-label">Boot Tarixi</div>
+            <div class="info-val info-mono">{{ agent.boot_time or "—" }}</div>
+          </div>
+        </div>
+        <div>
+          <div class="info-row" style="padding:10px 16px">
+            <div class="info-label">Əməliyyat Sistemi</div>
+            <div class="info-val">{{ agent.os_info or "—" }}</div>
+          </div>
+          <div class="info-row" style="padding:10px 16px">
+            <div class="info-label">Arxitektura</div>
+            <div class="info-val info-mono">{{ agent.architecture or "—" }}</div>
+          </div>
+          <div class="info-row" style="padding:10px 16px">
+            <div class="info-label">IP Ünvan</div>
+            <div class="info-val info-mono">{{ agent.ip or "—" }}</div>
+          </div>
+          <div class="info-row" style="padding:10px 16px">
+            <div class="info-label">Son Görünmə</div>
+            <div class="info-val info-mono">{{ (agent.last_seen or "—")[:19] }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label">Çalışan Proseslər (CPU-ya görə üst 50)</div>
+  <div class="card mb14">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>PID</th>
+            <th>Proses Adı</th>
+            <th style="min-width:120px">CPU %</th>
+            <th>RAM %</th>
+            <th>Status</th>
+            <th>User</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in processes %}
+          <tr>
+            <td style="font-family:var(--mono);color:var(--muted)">{{ p.pid }}</td>
+            <td style="font-weight:500">{{ p.name }}</td>
+            <td>
+              <div class="cpu-bar">
+                <div class="cpu-track">
+                  <div class="cpu-fill" style="width:{{ [p.cpu, 100]|min }}%"></div>
+                </div>
+                <span class="cpu-label">{{ p.cpu }}%</span>
+              </div>
+            </td>
+            <td style="color:var(--muted)">{{ p.memory }}%</td>
+            <td><span class="tag" style="background:rgba(255,255,255,0.05);color:var(--muted)">{{ p.status }}</span></td>
+            <td style="color:var(--muted)">{{ p.user or "—" }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="empty">Proses məlumatı yoxdur. Agent hələ göndərməyib.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section-label">Bu Agent-in Logları</div>
+
+  <div class="summary-row">
+    <div class="spill spill-err">🔴 {{ crit_count }} Critical</div>
+    <div class="spill spill-warn">⚠ {{ warn_count }} Warning</div>
+    <div class="spill">≡ {{ logs | length }} log göstərilir</div>
+  </div>
+
+  <div class="card">
+    <form method="get" class="filter-form">
+      <select name="category">
+        <option value="">Bütün kateqoriyalar</option>
+        <option value="process"  {% if category=='process'  %}selected{% endif %}>🔵 Process</option>
+        <option value="network"  {% if category=='network'  %}selected{% endif %}>🌐 Network</option>
+        <option value="security" {% if category=='security' %}selected{% endif %}>🔐 Security</option>
+        <option value="system"   {% if category=='system'   %}selected{% endif %}>⚙️ System</option>
+      </select>
+      <select name="severity">
+        <option value="">Bütün səviyyələr</option>
+        <option value="info"     {% if severity=='info'     %}selected{% endif %}>ℹ Info</option>
+        <option value="warning"  {% if severity=='warning'  %}selected{% endif %}>⚠ Warning</option>
+        <option value="critical" {% if severity=='critical' %}selected{% endif %}>🔴 Critical</option>
+      </select>
+      <button class="btn" type="submit">Filtrə et</button>
+      {% if category or severity %}
+      <a class="btn-ghost" href="/agent/{{ agent.hostname }}">Sıfırla</a>
+      {% endif %}
+    </form>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="col-time">Vaxt</th>
+            <th class="col-cat">Kateqoriya</th>
+            <th class="col-sev">Səviyyə</th>
+            <th class="col-msg">Mesaj</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in logs %}
+          <tr class="log-row row-{{ log.severity }}" onclick="toggleTelemetryRow('telemetry-row-{{ log.id }}')">
+            <td class="col-time">{{ log.timestamp[:19] }}</td>
+            <td class="col-cat"><span class="tag tag-{{ log.category }}">{{ log.category }}</span></td>
+            <td class="col-sev"><span class="tag sev-{{ log.severity }}">{{ log.severity }}</span></td>
+            <td class="col-msg" style="max-width: 500px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ log.content }}</td>
+          </tr>
+
+          <tr id="telemetry-row-{{ log.id }}" class="detail-row">
+            <td colspan="4">
+              <div class="telemetry-container">
+                
+                <div class="telemetry-raw">
+                  <div class="telemetry-section-title">📄 Log</div>
+                  <div class="raw-text">{{ log.content }}</div>
+                </div>
+                
+                <div class="telemetry-parsed">
+                  <div class="telemetry-section-title">🔍 Fieldlar</div>
+                  <table class="fields-table">
+                    <tbody>
+                      <tr>
+                        <td class="f-key">log_id</td>
+                        <td class="f-val">{{ log.id }}</td>
+                      </tr>
+                      <tr>
+                        <td class="f-key">category</td>
+                        <td class="f-val">{{ log.category }}</td>
+                      </tr>
+                      {% for key, val in log.fields|decode_json|items %}
+                      <tr>
+                        <td class="f-key">{{ key }}</td>
+                        <td class="f-val">{{ val }}</td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="empty">Log tapılmadı.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div><script>
+  function toggleTelemetryRow(id) {
+    const row = document.getElementById(id);
+    if (row.style.display === "table-row") {
+      row.style.display = "none";
+    } else {
+      row.style.display = "table-row";
+    }
+  }
+</script>
+
+</body>
+</html>
